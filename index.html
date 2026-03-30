@@ -1,39 +1,209 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>숫자 입력</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>모배 뽑기 시뮬레이터</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
+      --accent: #6c63ff; --bg: #0f1015; --surface: #181920; --surface2: #22232a;
+      --txt: #ffffff; --txt-dim: #8b8d98; --bd: rgba(255,255,255,0.08);
+      /* 등급별 색상 (이모지 대체) */
+      --color-red: #f04e4e; --color-pink: #e060a8; --color-purple: #9660dc;
+      --color-blue: #4488e8; --color-green: #38b870;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--txt);
+      font-family: 'DM Sans', sans-serif; min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; padding: 20px;
+    }
+    header { width: 100%; max-width: 600px; text-align: center; margin-bottom: 25px; }
+    .top-banner { width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radius-md); margin-bottom: 15px; }
+    
+    .container { width: 100%; max-width: 600px; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--radius-lg); padding: 24px; }
+    
+    .label { font-size: 13px; color: var(--txt-dim); margin-bottom: 8px; display: block; font-family: 'DM Mono'; }
+    select {
+      width: 100%; padding: 14px; background: var(--surface2); color: var(--txt);
+      border: 1px solid var(--bd); border-radius: var(--radius-sm); font-size: 16px; margin-bottom: 24px; cursor: pointer;
+    }
+
+    .btn-group { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
+    .draw-btn {
+      flex: 1; background: none; border: none; cursor: pointer; transition: transform 0.2s; padding: 0;
+    }
+    .draw-btn:hover { transform: translateY(-3px); }
+    .draw-btn img { width: 100%; border-radius: var(--radius-md); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+
+    .stats {
+      display: flex; justify-content: space-between; padding: 15px; background: var(--surface2);
+      border-radius: var(--radius-md); margin-bottom: 20px; font-family: 'DM Mono'; font-size: 14px;
+    }
+    .stats span { color: var(--accent); font-weight: 700; }
+
+    .result-list { 
+      display: flex; flex-direction: column; gap: 8px; max-height: 450px; overflow-y: auto; 
+      padding-right: 5px;
+    }
+    .result-item {
+      display: flex; align-items: center; background: var(--surface2); padding: 12px 16px;
+      border-radius: var(--radius-sm); border-left: 4px solid var(--g-color);
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    
+    .badge {
+      font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px;
+      margin-right: 12px; color: #fff; text-transform: uppercase;
+    }
+    .item-name { font-size: 14px; font-weight: 500; }
+
+    #loading { font-family: 'DM Mono'; color: var(--accent); padding: 40px; text-align: center; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: var(--bd); border-radius: 10px; }
+  </style>
 </head>
 <body>
 
-<input type="number" id="num" placeholder="숫자 입력 (6으로 시작)">
-<button onclick="sendData()">전송</button>
+<header>
+  <img src="image3.png" alt="Banner" class="top-banner" onerror="this.style.display='none'">
+  <h1 style="font-size: 22px;">PUBG MOBILE SIMULATOR</h1>
+</header>
+
+<div class="container">
+  <div id="loading">DATA LOADING...</div>
+  
+  <div id="main-ui" style="display:none;">
+    <label class="label">SELECT CRATE</label>
+    <select id="crate-select" onchange="resetDraw()"></select>
+
+    <div class="btn-group">
+      <button class="draw-btn" onclick="performDraw(1)">
+        <img src="image1.png" alt="1 Draw">
+      </button>
+      <button class="draw-btn" onclick="performDraw(10)">
+        <img src="image2.png" alt="10 Draws">
+      </button>
+    </div>
+
+    <div class="stats">
+      <div>TOTAL PULLS: <span id="count">0</span></div>
+      <div>SPENT UC: <span id="uc">0</span></div>
+    </div>
+
+    <div class="result-list" id="results"></div>
+  </div>
+</div>
 
 <script>
-const URL = "https://script.google.com/macros/s/AKfycbyznHKusOEwnfwquS_fXJWtY4p1dXAzWZb0IOM_899NDmEA81wfc_pZdnfTew0yxZI/exec";
+  const SHEET_ID = '1K2Q4loa65fnmIWM70UW4BA_bs894VUIBClE6gqUHOMU';
+  const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=확률표`;
 
-function sendData() {
-    const v = document.getElementById('num').value;
+  const GRADE_MAP = {
+    '레드': { color: 'var(--color-red)', label: 'MYTHIC' },
+    '핑크': { color: 'var(--color-pink)', label: 'LEGEND' },
+    '퍼플': { color: 'var(--color-purple)', label: 'EPIC' },
+    '블루': { color: 'var(--color-blue)', label: 'RARE' },
+    '그린': { color: 'var(--color-green)', label: 'COMMON' }
+  };
 
-    fetch(URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "value=" + encodeURIComponent(v)
-    })
-    .then(r => r.text())
-    .then(msg => {
-        if (msg === "OK") {
-            alert("입력 완료!");
+  let crateData = {};
+  let totalCount = 0;
+
+  async function init() {
+    try {
+      const resp = await fetch(CSV_URL);
+      const text = await resp.text();
+      parseData(text);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('main-ui').style.display = 'block';
+    } catch (e) {
+      document.getElementById('loading').innerText = "ERROR: FAILED TO LOAD DATA";
+    }
+  }
+
+  function parseData(csv) {
+    const rows = csv.split('\n').map(r => r.split(',').map(c => c.replace(/"/g, '').trim()));
+    let currentCrate = "";
+
+    for (let i = 0; i < rows.length; i++) {
+      const col0 = rows[i][0] || "";
+      // 상자 이름 추출 (시트 특성 반영)
+      if (col0.includes('아이템 명(KR)')) {
+        let nameRow = i - 1;
+        while (nameRow >= 0 && !rows[nameRow][0]) nameRow--;
+        currentCrate = (rows[nameRow] ? rows[nameRow][0] : "Unknown Crate").replace(/[■▣□◆◇●◎▷\[\]]/g, '').trim();
+        if (!crateData[currentCrate]) crateData[currentCrate] = [];
+        continue;
+      }
+
+      // 아이템 데이터 추출
+      if (currentCrate && col0 && !col0.includes('아이템') && !col0.includes('총합')) {
+        const grade = rows[i][2] || ""; // C열: 등급
+        const prob = parseFloat(rows[i][3]); // D열: 확률
+        if (!isNaN(prob)) {
+          crateData[currentCrate].push({ name: col0, grade, prob });
         }
-        else if (msg === "ERROR_GLOBAL") {
-            alert("글로벌 계정은 지원하지 않습니다.");
+      }
+    }
+    
+    const select = document.getElementById('crate-select');
+    Object.keys(crateData).reverse().forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+  }
+
+  function performDraw(times) {
+    const crateName = document.getElementById('crate-select').value;
+    const items = crateData[crateName];
+    if (!items) return;
+
+    const resultsContainer = document.getElementById('results');
+    const drawResults = [];
+
+    for (let i = 0; i < times; i++) {
+      const rand = Math.random() * 100;
+      let cumulative = 0;
+      for (const item of items) {
+        cumulative += item.prob;
+        if (rand <= cumulative) {
+          drawResults.push(item);
+          break;
         }
-        else {
-            alert(msg);
-        }
-    })
-    .catch(err => alert("오류 발생: " + err));
-}
+      }
+    }
+
+    totalCount += times;
+    document.getElementById('count').textContent = totalCount;
+    document.getElementById('uc').textContent = (totalCount * 120).toLocaleString();
+
+    drawResults.reverse().forEach(item => {
+      const gInfo = GRADE_MAP[item.grade] || { color: '#555', label: 'ETC' };
+      const div = document.createElement('div');
+      div.className = 'result-item';
+      div.style.setProperty('--g-color', gInfo.color);
+      div.innerHTML = `
+        <span class="badge" style="background:${gInfo.color}">${gInfo.label}</span>
+        <span class="item-name">${item.name}</span>
+      `;
+      resultsContainer.prepend(div);
+    });
+  }
+
+  function resetDraw() {
+    totalCount = 0;
+    document.getElementById('count').textContent = "0";
+    document.getElementById('uc').textContent = "0";
+    document.getElementById('results').innerHTML = "";
+  }
+
+  init();
 </script>
 
 </body>
